@@ -42,7 +42,6 @@
         <div class="tabs" role="tablist" aria-label="Mode">
           <button class="tab active" id="tab-daily" data-mode="daily">今日話題</button>
           <button class="tab" id="tab-live" data-mode="live">12 小時熱議</button>
-          <!-- NEW: all-time view -->
           <button class="tab" id="tab-all" data-mode="all">所有時間</button>
         </div>
         <input id="search" placeholder="搜尋標題/摘要/關鍵字" size="24" />
@@ -51,10 +50,6 @@
           <option value="正面">正面</option>
           <option value="中立">中立</option>
           <option value="負面">負面</option>
-        </select>
-        <select id="lang">
-          <option value="zh-TW">繁中</option>
-          <option value="en-US">English</option>
         </select>
       </div>
     </div>
@@ -78,9 +73,7 @@
     <div class="wrap row-between small muted">
       <div>© <span id="year"></span> JP Trend • <a href="about.html">關於</a> • <a href="legal.html">法律聲明</a></div>
       <div class="row" style="gap:8px">
-        <!-- NEW: CSV download -->
         <button id="downloadCsv">下載原始資料（CSV）</button>
-        <span>語言切換於頁首右側</span>
       </div>
     </div>
   </footer>
@@ -94,35 +87,31 @@
   const $count = $('#count');
   const $last = $('#lastUpdated');
   const $windowLabel = $('#windowLabel');
-  const $lang = $('#lang');
   const $emotion = $('#emotion');
   const $search = $('#search');
-  const $download = $('#downloadCsv'); // NEW
+  const $download = $('#downloadCsv');
   const tabs = [...document.querySelectorAll('.tab')];
 
-  const state = { rows: [], mode: 'daily', lang: 'zh-TW', emotion: '', query: '' };
+  const state = { rows: [], mode: 'daily', emotion: '', query: '' };
 
   function csvParse(text){
-    // Robust-enough CSV parser for quoted fields
     const rows = [];
     let i=0, field='', inQuotes=false, row=[];
     while(i<text.length){
       const c = text[i];
       if(inQuotes){
-        if(c==='"'){
-          if(text[i+1]==='"'){ field+='"'; i++; }
-          else inQuotes=false;
-        } else field+=c;
+        if(c==='"'){ if(text[i+1]==='"'){ field+='"'; i++; } else inQuotes=false; }
+        else field+=c;
       } else {
         if(c==='"') inQuotes=true;
         else if(c===','){ row.push(field); field=''; }
         else if(c==='\n'){ row.push(field); rows.push(row); row=[]; field=''; }
-        else if(c==='\r'){ /* ignore */ }
+        else if(c==='\r'){ }
         else field+=c;
       }
       i++;
     }
-    if(field!==''||row.length) { row.push(field); rows.push(row); }
+    if(field!==''||row.length){ row.push(field); rows.push(row); }
     const header = rows.shift();
     return rows.map(r=>Object.fromEntries(header.map((h,idx)=>[h.trim(), (r[idx]??'').trim()])));
   }
@@ -130,31 +119,26 @@
   function to2(n){ return n<10? '0'+n : ''+n }
 
   function parseJST(s){
-    // Accept formats like: 2025/10/15 上午 9:06:18  OR ISO-like
     s = s.replace(/\s+/g,' ').trim();
     const m = s.match(/(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})(?:\s*(上午|午後|下午|AM|PM)\s*)?(\d{1,2}):(\d{2})(?::(\d{2}))?/i);
     if(m){
       let [_,y,mo,d,ampm,h,mi,se] = m; y=+y; mo=+mo; d=+d; h=+h; mi=+mi; se=+(se||0);
-      const pmWords = ['午後','下午','PM']; const amWords=['上午','AM'];
+      const pmWords=['午後','下午','PM'], amWords=['上午','AM'];
       if(pmWords.includes(ampm) && h<12) h+=12;
       if(amWords.includes(ampm) && h===12) h=0;
-      // construct UTC millis from JST components
-      const utcMs = Date.UTC(y, mo-1, d, h-9, mi, se); // subtract 9h to get UTC
+      const utcMs = Date.UTC(y, mo-1, d, h-9, mi, se);
       return new Date(utcMs);
     }
-    // Fallback: native parse
     const d2 = new Date(s);
-    if(!isNaN(d2)) return d2;
-    return null;
+    return isNaN(d2)? null : d2;
   }
 
   function fmtJST(date){
-    // Render YYYY-MM-DD HH:MM JST
     const y=date.getUTCFullYear();
     const m=to2(date.getUTCMonth()+1);
     const d=to2(date.getUTCDate());
-    const hh=to2(date.getUTCHours()+9); // represent as JST hours (naive)
-    const H=(+hh)%24; // wrap
+    const hh=to2(date.getUTCHours()+9);
+    const H=(+hh)%24;
     return `${y}-${m}-${d} ${to2(H)}:${to2(date.getUTCMinutes())}`;
   }
 
@@ -172,31 +156,21 @@
   }
 
   function scoreRows(rows){
-    // r=position score (top=1, bottom=0); t=recency decay; lift = max(0, t-r)
-    const n = rows.length;
-    const now = Date.now();
-    const tau = 720*60*1000; // 12h
+    const n = rows.length, now = Date.now(), tau = 720*60*1000; // 12h
     return rows.map((row,idx)=>{
-      const i = idx+1; // 1..n
-      const r = 1 - (i-1)/(n-1 || 1);
+      const rpos = 1 - (idx)/(n-1 || 1);
       const d = parseJST(row.fetched_at);
       const ageMs = d ? (now - d.getTime()) : 1e15;
       const t = Math.exp(-ageMs/tau);
-      const lift = Math.max(0, t - r);
-      return { ...row, _score: 0.6*t + 0.4*lift, _r:r, _t:t, _age:ageMs };
+      const lift = Math.max(0, t - rpos);
+      return { ...row, _score: 0.6*t + 0.4*lift };
     });
   }
 
-  function pickLang(row, field){
-    if(state.lang==='en-US' && row[field+"_en"]) return row[field+"_en"];
-    return row[field] || '';
-  }
-
   function render(){
-    const q = state.query.toLowerCase();
+    const q = (state.query||'').toLowerCase();
     let rows = state.rows.slice();
 
-    // window filter
     const nowKey = todayJST();
     const now = Date.now();
     if(state.mode==='daily'){
@@ -204,64 +178,57 @@
       $windowLabel.textContent = 'JST 今日';
       rows = scoreRows(rows).sort((a,b)=>b._score - a._score);
     } else if (state.mode==='live') {
-      const windowMs = 12*60*60*1000; // 12h
+      const windowMs = 12*60*60*1000;
       rows = rows.filter(r=>{ const d=parseJST(r.fetched_at); return d && (now - d.getTime()) <= windowMs; });
       $windowLabel.textContent = 'JST 過去12小時';
       rows = rows.sort((a,b)=> parseJST(b.fetched_at)-parseJST(a.fetched_at));
-    } else { // all-time
+    } else {
       $windowLabel.textContent = '所有時間（全部資料）';
       rows = rows.sort((a,b)=> parseJST(b.fetched_at)-parseJST(a.fetched_at));
     }
 
-    // emotion filter
     if(state.emotion){ rows = rows.filter(r=> (r.emotion||'').includes(state.emotion)); }
 
-    // search
     if(q){
       rows = rows.filter(r=>{
-        const t = pickLang(r,'title').toLowerCase();
-        const s = pickLang(r,'summary').toLowerCase();
+        const t = (r.title||'').toLowerCase();
+        const s = (r.summary||'').toLowerCase();
         const k = (r.keywords||'').toLowerCase();
         return t.includes(q)||s.includes(q)||k.includes(q);
       });
     }
 
-    
     $count.textContent = rows.length;
 
     grid.innerHTML = rows.map(r=>{
-      const t = pickLang(r,'title');
-      const s = pickLang(r,'summary');
       const kw = (r.keywords||'').split(/\s*,\s*/).filter(Boolean).slice(0,6);
       const d = parseJST(r.fetched_at);
       const fetched = d ? fmtJST(d)+' JST' : (r.fetched_at||'');
       const emo = r.emotion||'';
-      const missingEN = (state.lang==='en-US' && (!r.title_en||!r.summary_en));
       return `
         <article class="card">
-          <div class="title"><a href="${r.url}" target="_blank" rel="noopener">${escapeHtml(t||'(no title)')}</a></div>
+          <div class="title"><a href="${r.url}" target="_blank" rel="noopener">${escapeHtml(r.title||'(no title)')}</a></div>
           <div class="muted small">來源：<a href="${r.url}" target="_blank" rel="noopener">5ch</a> ・ 更新：${escapeHtml(fetched)}</div>
-          <div>${escapeHtml(s||'')}</div>
+          <div>${escapeHtml(r.summary||'')}</div>
           <div class="chips">
             ${kw.map(k=>`<span class="chip">#${escapeHtml(k)}</span>`).join('')}
           </div>
           <div class="row" style="justify-content:space-between">
             <span class="badge">情緒：${escapeHtml(emo||'—')}</span>
-            ${missingEN?'<span class="small muted">未翻譯</span>':''}
           </div>
         </article>`;
     }).join('');
   }
 
   function escapeHtml(s){
-    return s.replace(/[&<>\"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+    return s.replace(/[&<>\"']/g, c=>({"&":"&amp;","<":"&lt;","&gt;":">","\"":"&quot;","'":"&#39;"}[c] || c));
   }
 
   async function load(){
     try{
       const cacheKey = 'jptrend_csv_cache_v1';
       const cacheAtKey = 'jptrend_csv_time_v1';
-      const ttlMs = 15*60*1000; // 15 min
+      const ttlMs = 15*60*1000;
       let text = localStorage.getItem(cacheKey);
       let ts = +(localStorage.getItem(cacheAtKey)||0);
       const now = Date.now();
@@ -281,25 +248,22 @@
     }
   }
 
-  // CSV download with UTF-8 BOM for Excel compatibility (fixes garbled text)
+  // CSV download with UTF-8 BOM (Excel-safe)
   if ($download) {
     $download.addEventListener('click', async () => {
       try {
         const res  = await fetch(CSV_URL, { cache: 'no-store' });
-        const text = await res.text();                  // read as text
-        const bom  = '\uFEFF';                          // UTF-8 BOM
+        const text = await res.text();
+        const bom  = '\uFEFF';
         const blob = new Blob([bom, text], { type: 'text/csv;charset=utf-8;' });
         const url  = URL.createObjectURL(blob);
         const ymd  = new Date().toISOString().slice(0,10);
         const a = document.createElement('a');
-        a.href = url;
-        a.download = `jp-trend-${ymd}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
+        a.href = url; a.download = `jp-trend-${ymd}.csv`;
+        document.body.appendChild(a); a.click(); a.remove();
         URL.revokeObjectURL(url);
       } catch (e) {
-        alert(state.lang==='en-US' ? 'Download failed. Try again.' : '下載失敗，請稍後重試');
+        alert('下載失敗，請稍後重試');
       }
     });
   }
@@ -310,14 +274,12 @@
     b.classList.add('active');
     state.mode = b.dataset.mode; render();
   }));
-  $lang.addEventListener('change',()=>{ state.lang=$lang.value; render(); });
-  $emotion.addEventListener('change',()=>{ state.emotion=$emotion.value; render(); });
-  $search.addEventListener('input',()=>{ state.query=$search.value; render(); });
+  document.getElementById('emotion').addEventListener('change',()=>{ state.emotion=emotion.value; render(); });
+  document.getElementById('search').addEventListener('input',()=>{ state.query=search.value; render(); });
 
   // init
-  $('#year').textContent = new Date().getFullYear();
+  document.getElementById('year').textContent = new Date().getFullYear();
   load();
-  // auto refresh in live mode
   setInterval(()=>{ if(state.mode==='live') load(); }, 15*60*1000);
   </script>
 </body>
