@@ -40,8 +40,8 @@
       </div>
       <div class="controls">
         <div class="tabs" role="tablist" aria-label="Mode">
-          <button class="tab active" id="tab-daily" data-mode="daily">今日話題</button>
-          <button class="tab" id="tab-live" data-mode="live">12 小時熱議</button>
+          <button class="tab active" id="tab-daily" data-mode="daily">今日消息</button>
+          <button class="tab" id="tab-live" data-mode="live">近期話題</button>
         </div>
         <input id="search" placeholder="搜尋標題/摘要/關鍵字" size="24" />
         <select id="emotion">
@@ -75,7 +75,10 @@
   <footer>
     <div class="wrap row-between small muted">
       <div>© <span id="year"></span> JP Trend • <a href="about.html">關於</a> • <a href="legal.html">法律聲明</a></div>
-      <div>語言切換於頁首右側</div>
+      <div class="row" style="gap:8px">
+        <button id="downloadCsv">下載原始資料（CSV）</button>
+        <span>語言切換於頁首右側</span>
+      </div>
     </div>
   </footer>
 
@@ -91,6 +94,7 @@
   const $lang = $('#lang');
   const $emotion = $('#emotion');
   const $search = $('#search');
+  const $download = $('#downloadCsv');
   const tabs = [...document.querySelectorAll('.tab')];
 
   const state = { rows: [], mode: 'daily', lang: 'zh-TW', emotion: '', query: '' };
@@ -146,9 +150,8 @@
     const y=date.getUTCFullYear();
     const m=to2(date.getUTCMonth()+1);
     const d=to2(date.getUTCDate());
-    const hh=to2(date.getUTCHours()+9); // represent as JST hours (naive)
-    const H=(+hh)%24; // wrap
-    return `${y}-${m}-${d} ${to2(H)}:${to2(date.getUTCMinutes())}`;
+    const hh=(date.getUTCHours()+9+24)%24;
+    return `${y}-${m}-${d} ${to2(hh)}:${to2(date.getUTCMinutes())}`;
   }
 
   function jstDateKey(date){
@@ -165,7 +168,7 @@
   }
 
   function scoreRows(rows){
-    // r=position score (top=1, bottom=0); t=recency decay; lift = max(0, t-r)
+    // popularity/velocity score based on row-position vs fetched_at recency
     const n = rows.length;
     const now = Date.now();
     const tau = 720*60*1000; // 12h
@@ -181,7 +184,8 @@
   }
 
   function pickLang(row, field){
-    if(state.lang==='en-US' && row[field+"_en"]) return row[field+"_en"];
+    if(state.lang==='en-US' && row[field+"__en"]) return row[field+"__en"]; // if you store *_en with double underscore
+    if(state.lang==='en-US' && row[field+"_en"]) return row[field+"_en"];   // or single underscore
     return row[field] || '';
   }
 
@@ -194,12 +198,12 @@
     const now = Date.now();
     if(state.mode==='daily'){
       rows = rows.filter(r=> jstDateKey(parseJST(r.fetched_at))===nowKey );
-      $windowLabel.textContent = 'JST 今日';
+      $windowLabel.textContent = '今日消息（JST）';
       rows = scoreRows(rows).sort((a,b)=>b._score - a._score);
     } else {
       const windowMs = 12*60*60*1000; // 12h
       rows = rows.filter(r=>{ const d=parseJST(r.fetched_at); return d && (now - d.getTime()) <= windowMs; });
-      $windowLabel.textContent = 'JST 過去12小時';
+      $windowLabel.textContent = '近期話題（JST；過去12小時）';
       rows = rows.sort((a,b)=> parseJST(b.fetched_at)-parseJST(a.fetched_at));
     }
 
@@ -229,10 +233,11 @@
       const fetched = d ? fmtJST(d)+' JST' : (r.fetched_at||'');
       const emo = r.emotion||'';
       const missingEN = (state.lang==='en-US' && (!r.title_en||!r.summary_en));
+      const safeUrl = encodeURI(r.url||'#');
       return `
         <article class="card">
-          <div class="title"><a href="${r.url}" target="_blank" rel="noopener">${escapeHtml(t||'(no title)')}</a></div>
-          <div class="muted small">來源：<a href="${r.url}" target="_blank" rel="noopener">5ch</a> ・ 更新：${escapeHtml(fetched)}</div>
+          <div class="title"><a href="${safeUrl}" target="_blank" rel="noopener">${escapeHtml(t||'(no title)')}</a></div>
+          <div class="muted small">來源：<a href="${safeUrl}" target="_blank" rel="noopener">5ch</a> ・ 更新：${escapeHtml(fetched)}</div>
           <div>${escapeHtml(s||'')}</div>
           <div class="chips">
             ${kw.map(k=>`<span class="chip">#${escapeHtml(k)}</span>`).join('')}
@@ -246,7 +251,7 @@
   }
 
   function escapeHtml(s){
-    return s.replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+    return s.replace(/[&<>\"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
   }
 
   async function load(){
@@ -273,18 +278,51 @@
     }
   }
 
+  // download CSV
+  if ($download) {
+    $download.addEventListener('click', async () => {
+      try {
+        const res = await fetch(CSV_URL, { cache: 'no-store' });
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const ymd = new Date().toISOString().slice(0,10);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `jp-trend-${ymd}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        alert(state.lang==='en-US' ? 'Download failed. Try again.' : '下載失敗，請稍後重試');
+      }
+    });
+  }
+
+  // keep the button label in sync with language (optional)
+  function syncDownloadLabel(){
+    if(!$download) return;
+    $download.textContent = state.lang==='en-US'
+      ? 'Download raw data (CSV)'
+      : '下載原始資料（CSV）';
+  }
+
   // events
-  tabs.forEach(b=>b.addEventListener('click',()=>{
-    tabs.forEach(x=>x.classList.remove('active'));
+  const dailyBtn = document.getElementById('tab-daily');
+  const liveBtn = document.getElementById('tab-live');
+  [dailyBtn, liveBtn].forEach(b => b.addEventListener('click', () => {
+    [dailyBtn, liveBtn].forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
-    state.mode = b.dataset.mode; render();
+    state.mode = b.dataset.mode;
+    render();
   }));
-  $lang.addEventListener('change',()=>{ state.lang=$lang.value; render(); });
+  $lang.addEventListener('change',()=>{ state.lang=$lang.value; render(); syncDownloadLabel(); });
   $emotion.addEventListener('change',()=>{ state.emotion=$emotion.value; render(); });
   $search.addEventListener('input',()=>{ state.query=$search.value; render(); });
 
   // init
   $('#year').textContent = new Date().getFullYear();
+  syncDownloadLabel();
   load();
   // auto refresh in live mode
   setInterval(()=>{ if(state.mode==='live') load(); }, 15*60*1000);
