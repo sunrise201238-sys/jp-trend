@@ -39,10 +39,7 @@
         <span class="badge" id="lastUpdated">載入中…</span>
       </div>
       <div class="controls">
-        <div class="tabs" role="tablist" aria-label="Mode">
-          <button class="tab active" id="tab-daily" data-mode="daily">每日</button>
-          <button class="tab" id="tab-live" data-mode="live">即時</button>
-        </div>
+        <span class="badge" id="freqBadge">更新頻率：每 ~6 小時</span>
         <input id="search" placeholder="搜尋標題/摘要/關鍵字" size="24" />
         <select id="emotion">
           <option value="">全部情緒</option>
@@ -91,9 +88,9 @@
   const $lang = $('#lang');
   const $emotion = $('#emotion');
   const $search = $('#search');
-  const tabs = [...document.querySelectorAll('.tab')];
+  const tabs = []; // live mode removed
 
-  const state = { rows: [], mode: 'daily', lang: 'zh-TW', emotion: '', query: '' };
+  const state = { rows: [], lang: 'zh-TW', emotion: '', query: '' };
 
   function csvParse(text){
     // Robust-enough CSV parser for quoted fields
@@ -106,9 +103,7 @@
           if(text[i+1]==='"'){ field+='"'; i++; }
           else inQuotes=false;
         } else field+=c;
-      } else {
-        if(c==='"') inQuotes=true;
-        else if(c===','){ row.push(field); field=''; }
+      }
         else if(c==='\n'){ row.push(field); rows.push(row); row=[]; field=''; }
         else if(c==='\r'){ /* ignore */ }
         else field+=c;
@@ -192,7 +187,7 @@
     // window filter
     const nowKey = todayJST();
     const now = Date.now();
-    if(state.mode==='daily'){
+    if(true){
       rows = rows.filter(r=> jstDateKey(parseJST(r.fetched_at))===nowKey );
       $windowLabel.textContent = 'JST 今日';
       rows = scoreRows(rows).sort((a,b)=>b._score - a._score);
@@ -217,7 +212,7 @@
     }
 
     // limit for daily list
-    if(state.mode==='daily') rows = rows.slice(0,20);
+    rows = rows.slice(0,20);
 
     $count.textContent = rows.length;
 
@@ -274,8 +269,7 @@
   }
 
   // events
-  tabs.forEach(b=>b.addEventListener('click',()=>{
-    tabs.forEach(x=>x.classList.remove('active'));
+  
     b.classList.add('active');
     state.mode = b.dataset.mode; render();
   }));
@@ -287,7 +281,7 @@
   $('#year').textContent = new Date().getFullYear();
   load();
   // auto refresh in live mode
-  setInterval(()=>{ if(state.mode==='live') load(); }, 15*60*1000);
+  
   </script>
 </body>
 </html>
