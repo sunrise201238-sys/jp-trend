@@ -1,33 +1,293 @@
 <!doctype html>
 <html lang="zh-Hant">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Coming Soon</title></head>
-<body style="font-family:system-ui;display:grid;place-items:center;height:100dvh;margin:0;">
-  <main style="text-align:center">
-    <h1>JP Trend</h1>
-    <p>網站建置中</p>
-  </main>
-</body>
-</html>
-<!doctype html>
-<html lang="zh-Hant">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>JP Trend</title>
   <style>
-    body{font-family:system-ui,Segoe UI,Helvetica,Arial,sans-serif;margin:0;padding:2rem 1rem;max-width:720px;line-height:1.6}
-    nav a{margin-right:1rem}
-    .muted{color:#666}
+    :root{--max:980px;--pad:14px;--muted:#6b7280;--bg:#0b0c10;--card:#111217;--fg:#e5e7eb;--accent:#22d3ee;--pill:#1f2937;--border:#23262d}
+    html,body{margin:0;background:#0b0c10;color:var(--fg);font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans",sans-serif}
+    a{color:var(--accent);text-decoration:none}
+    header{position:sticky;top:0;background:rgba(11,12,16,.8);backdrop-filter:saturate(140%) blur(8px);border-bottom:1px solid var(--border);z-index:10}
+    .wrap{max-width:var(--max);margin:0 auto;padding:var(--pad)}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    h1{font-size:20px;margin:0 12px 0 0;letter-spacing:.5px}
+    .muted{color:var(--muted)}
+    .badge{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border-radius:999px;background:var(--pill);border:1px solid var(--border);font-size:12px}
+    .controls{display:flex;gap:10px;flex-wrap:wrap}
+    select,input,button{background:var(--card);color:var(--fg);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:14px}
+    .tabs{display:flex;gap:6px;padding:6px;background:var(--card);border:1px solid var(--border);border-radius:12px}
+    .tab{border:none;background:transparent;padding:8px 12px;border-radius:8px;cursor:pointer}
+    .tab.active{background:#18202a}
+    main{max-width:var(--max);margin:0 auto;padding:20px var(--pad)}
+    .grid{display:grid;grid-template-columns:repeat(1,minmax(0,1fr));gap:14px}
+    @media(min-width:720px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:10px}
+    .title{font-weight:650;font-size:16px}
+    .chips{display:flex;flex-wrap:wrap;gap:6px}
+    .chip{font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--border);background:#0e1117}
+    footer{border-top:1px solid var(--border)}
+    .row-between{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+    .small{font-size:12px}
   </style>
 </head>
 <body>
-  <h1>JP Trend</h1>
-  <p class="muted">網站建置中。這裡會展示 5ch / 2ch 熱門主題與 AI 摘要。</p>
-  <nav>
-    <a href="about.html">關於本站</a>
-    <a href="legal.html">聲明/聯絡</a>
-  </nav>
-  <hr>
-  <p>目前進度：<br>① GitHub Pages 上線 ✅<br>② 串接資料與 AI 摘要（下一步）</p>
+  <header>
+    <div class="wrap row-between">
+      <div class="row">
+        <h1>JP Trend</h1>
+        <span class="badge" id="lastUpdated">載入中…</span>
+      </div>
+      <div class="controls">
+        <div class="tabs" role="tablist" aria-label="Mode">
+          <button class="tab active" id="tab-daily" data-mode="daily">每日</button>
+          <button class="tab" id="tab-live" data-mode="live">即時</button>
+        </div>
+        <input id="search" placeholder="搜尋標題/摘要/關鍵字" size="24" />
+        <select id="emotion">
+          <option value="">全部情緒</option>
+          <option value="正面">正面</option>
+          <option value="中立">中立</option>
+          <option value="負面">負面</option>
+        </select>
+        <select id="lang">
+          <option value="zh-TW">繁中</option>
+          <option value="en-US">English</option>
+        </select>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <div class="row-between muted small" style="margin:6px 0 12px">
+        <div>
+          <span id="count">0</span> 筆結果 ・ <span id="windowLabel">JST 今日</span>
+        </div>
+        <div>
+          資料來源：<a href="https://asahi.5ch.net/newsplus/" target="_blank" rel="noopener">5ch / newsplus</a>
+        </div>
+      </div>
+      <section class="grid" id="grid"></section>
+    </div>
+  </main>
+
+  <footer>
+    <div class="wrap row-between small muted">
+      <div>© <span id="year"></span> JP Trend • <a href="about.html">關於</a> • <a href="legal.html">法律聲明</a></div>
+      <div>語言切換於頁首右側</div>
+    </div>
+  </footer>
+
+  <script>
+  const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSlBNUMjHcIbPs3cO3k3LJz4gpkmAqjxoCp7LSCWUKi7xIfPvd12uhmAW7pXPwTdia-vbVFCzPVt7AI/pub?output=csv";
+  const JST_OFFSET_MIN = 9*60; // minutes
+
+  const $ = (s)=>document.querySelector(s);
+  const grid = $('#grid');
+  const $count = $('#count');
+  const $last = $('#lastUpdated');
+  const $windowLabel = $('#windowLabel');
+  const $lang = $('#lang');
+  const $emotion = $('#emotion');
+  const $search = $('#search');
+  const tabs = [...document.querySelectorAll('.tab')];
+
+  const state = { rows: [], mode: 'daily', lang: 'zh-TW', emotion: '', query: '' };
+
+  function csvParse(text){
+    // Robust-enough CSV parser for quoted fields
+    const rows = [];
+    let i=0, field='', inQuotes=false, row=[];
+    while(i<text.length){
+      const c = text[i];
+      if(inQuotes){
+        if(c==='"'){
+          if(text[i+1]==='"'){ field+='"'; i++; }
+          else inQuotes=false;
+        } else field+=c;
+      } else {
+        if(c==='"') inQuotes=true;
+        else if(c===','){ row.push(field); field=''; }
+        else if(c==='\n'){ row.push(field); rows.push(row); row=[]; field=''; }
+        else if(c==='\r'){ /* ignore */ }
+        else field+=c;
+      }
+      i++;
+    }
+    if(field!==''||row.length) { row.push(field); rows.push(row); }
+    const header = rows.shift();
+    return rows.map(r=>Object.fromEntries(header.map((h,idx)=>[h.trim(), (r[idx]??'').trim()])));
+  }
+
+  function to2(n){ return n<10? '0'+n : ''+n }
+
+  function parseJST(s){
+    // Accept formats like: 2025/10/15 上午 9:06:18  OR ISO-like
+    s = s.replace(/\s+/g,' ').trim();
+    const m = s.match(/(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})(?:\s*(上午|午後|下午|AM|PM)\s*)?(\d{1,2}):(\d{2})(?::(\d{2}))?/i);
+    if(m){
+      let [_,y,mo,d,ampm,h,mi,se] = m; y=+y; mo=+mo; d=+d; h=+h; mi=+mi; se=+(se||0);
+      const pmWords = ['午後','下午','PM']; const amWords=['上午','AM'];
+      if(pmWords.includes(ampm) && h<12) h+=12;
+      if(amWords.includes(ampm) && h===12) h=0;
+      // construct UTC millis from JST components
+      const utcMs = Date.UTC(y, mo-1, d, h-9, mi, se); // subtract 9h to get UTC
+      return new Date(utcMs);
+    }
+    // Fallback: native parse
+    const d2 = new Date(s);
+    if(!isNaN(d2)) return d2;
+    return null;
+  }
+
+  function fmtJST(date){
+    // Render YYYY-MM-DD HH:MM JST
+    const y=date.getUTCFullYear();
+    const m=to2(date.getUTCMonth()+1);
+    const d=to2(date.getUTCDate());
+    const hh=to2(date.getUTCHours()+9); // represent as JST hours (naive)
+    const H=(+hh)%24; // wrap
+    return `${y}-${m}-${d} ${to2(H)}:${to2(date.getUTCMinutes())}`;
+  }
+
+  function jstDateKey(date){
+    const y=date.getUTCFullYear();
+    const m=to2(date.getUTCMonth()+1);
+    const d=to2(date.getUTCDate());
+    return `${y}-${m}-${d}`;
+  }
+
+  function todayJST(){
+    const now = new Date();
+    const jst = new Date(now.getTime() + (JST_OFFSET_MIN + now.getTimezoneOffset())*60000);
+    return jstDateKey(new Date(Date.UTC(jst.getFullYear(), jst.getMonth(), jst.getDate())));
+  }
+
+  function scoreRows(rows){
+    // r=position score (top=1, bottom=0); t=recency decay; lift = max(0, t-r)
+    const n = rows.length;
+    const now = Date.now();
+    const tau = 720*60*1000; // 12h
+    return rows.map((row,idx)=>{
+      const i = idx+1; // 1..n
+      const r = 1 - (i-1)/(n-1 || 1);
+      const d = parseJST(row.fetched_at);
+      const ageMs = d ? (now - d.getTime()) : 1e15;
+      const t = Math.exp(-ageMs/tau);
+      const lift = Math.max(0, t - r);
+      return { ...row, _score: 0.6*t + 0.4*lift, _r:r, _t:t, _age:ageMs };
+    });
+  }
+
+  function pickLang(row, field){
+    if(state.lang==='en-US' && row[field+"_en"]) return row[field+"_en"];
+    return row[field] || '';
+  }
+
+  function render(){
+    const q = state.query.toLowerCase();
+    let rows = state.rows.slice();
+
+    // window filter
+    const nowKey = todayJST();
+    const now = Date.now();
+    if(state.mode==='daily'){
+      rows = rows.filter(r=> jstDateKey(parseJST(r.fetched_at))===nowKey );
+      $windowLabel.textContent = 'JST 今日';
+      rows = scoreRows(rows).sort((a,b)=>b._score - a._score);
+    } else {
+      const windowMs = 12*60*60*1000; // 12h
+      rows = rows.filter(r=>{ const d=parseJST(r.fetched_at); return d && (now - d.getTime()) <= windowMs; });
+      $windowLabel.textContent = 'JST 過去12小時';
+      rows = rows.sort((a,b)=> parseJST(b.fetched_at)-parseJST(a.fetched_at));
+    }
+
+    // emotion filter
+    if(state.emotion){ rows = rows.filter(r=> (r.emotion||'').includes(state.emotion)); }
+
+    // search
+    if(q){
+      rows = rows.filter(r=>{
+        const t = pickLang(r,'title').toLowerCase();
+        const s = pickLang(r,'summary').toLowerCase();
+        const k = (r.keywords||'').toLowerCase();
+        return t.includes(q)||s.includes(q)||k.includes(q);
+      });
+    }
+
+    // limit for daily list
+    if(state.mode==='daily') rows = rows.slice(0,20);
+
+    $count.textContent = rows.length;
+
+    grid.innerHTML = rows.map(r=>{
+      const t = pickLang(r,'title');
+      const s = pickLang(r,'summary');
+      const kw = (r.keywords||'').split(/\s*,\s*/).filter(Boolean).slice(0,6);
+      const d = parseJST(r.fetched_at);
+      const fetched = d ? fmtJST(d)+' JST' : (r.fetched_at||'');
+      const emo = r.emotion||'';
+      const missingEN = (state.lang==='en-US' && (!r.title_en||!r.summary_en));
+      return `
+        <article class="card">
+          <div class="title"><a href="${r.url}" target="_blank" rel="noopener">${escapeHtml(t||'(no title)')}</a></div>
+          <div class="muted small">來源：<a href="${r.url}" target="_blank" rel="noopener">5ch</a> ・ 更新：${escapeHtml(fetched)}</div>
+          <div>${escapeHtml(s||'')}</div>
+          <div class="chips">
+            ${kw.map(k=>`<span class="chip">#${escapeHtml(k)}</span>`).join('')}
+          </div>
+          <div class="row" style="justify-content:space-between">
+            <span class="badge">情緒：${escapeHtml(emo||'—')}</span>
+            ${missingEN?'<span class="small muted">未翻譯</span>':''}
+          </div>
+        </article>`;
+    }).join('');
+  }
+
+  function escapeHtml(s){
+    return s.replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+  }
+
+  async function load(){
+    try{
+      const cacheKey = 'jptrend_csv_cache_v1';
+      const cacheAtKey = 'jptrend_csv_time_v1';
+      const ttlMs = 15*60*1000; // 15 min
+      let text = localStorage.getItem(cacheKey);
+      let ts = +(localStorage.getItem(cacheAtKey)||0);
+      const now = Date.now();
+      if(!text || now-ts>ttlMs){
+        const res = await fetch(CSV_URL, {cache:'no-store'});
+        text = await res.text();
+        localStorage.setItem(cacheKey, text);
+        localStorage.setItem(cacheAtKey, String(now));
+      }
+      const rows = csvParse(text);
+      state.rows = rows.filter(r=>r.url && r.title);
+      $last.textContent = '資料更新於 ' + new Date(+localStorage.getItem(cacheAtKey)).toLocaleString('zh-TW');
+      render();
+    }catch(err){
+      console.error(err);
+      $last.textContent = '載入失敗，請稍後重試';
+    }
+  }
+
+  // events
+  tabs.forEach(b=>b.addEventListener('click',()=>{
+    tabs.forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    state.mode = b.dataset.mode; render();
+  }));
+  $lang.addEventListener('change',()=>{ state.lang=$lang.value; render(); });
+  $emotion.addEventListener('change',()=>{ state.emotion=$emotion.value; render(); });
+  $search.addEventListener('input',()=>{ state.query=$search.value; render(); });
+
+  // init
+  $('#year').textContent = new Date().getFullYear();
+  load();
+  // auto refresh in live mode
+  setInterval(()=>{ if(state.mode==='live') load(); }, 15*60*1000);
+  </script>
 </body>
 </html>
