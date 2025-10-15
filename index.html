@@ -211,7 +211,6 @@
     } else { // all-time
       $windowLabel.textContent = '所有時間（全部資料）';
       rows = rows.sort((a,b)=> parseJST(b.fetched_at)-parseJST(a.fetched_at));
-      rows = rows.slice(0, 100); // gentle cap to avoid rendering too much
     }
 
     // emotion filter
