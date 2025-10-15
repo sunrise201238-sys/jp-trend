@@ -226,9 +226,7 @@
       });
     }
 
-    // limit for daily list
-    if(state.mode==='daily') rows = rows.slice(0,20);
-
+    
     $count.textContent = rows.length;
 
     grid.innerHTML = rows.map(r=>{
