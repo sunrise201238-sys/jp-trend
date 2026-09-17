@@ -1,4 +1,4 @@
-<!doctype html>
+Q<!doctype html>
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8" />
@@ -228,7 +228,8 @@
     }
 
     grid.innerHTML = pageRows.map(r=>{
-      const kw = (r.keywords||'').split(/\s*,\s*/).filter(Boolean).slice(0,6);
+      // 去掉每個關鍵字頭尾多餘的引號（來源資料的 join 公式會留下 " 符號）
+      const kw = (r.keywords||'').split(/\s*,\s*/).map(k=>k.replace(/^["'\s]+|["'\s]+$/g,'')).filter(Boolean).slice(0,6);
       const d = parseJST(r.fetched_at);
       const fetched = d ? fmtJST(d)+' JST' : (r.fetched_at||'');
       const emo = r.emotion||'';
@@ -285,7 +286,7 @@
   });
 
   function escapeHtml(s){
-    return s.replace(/[&<>\"']/g, c=>({"&":"&amp;","<":"&lt;","&gt;":">","\"":"&quot;","'":"&#39;"}[c] || c));
+    return s.replace(/[&<>\"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c] || c));
   }
 
   async function load(){
