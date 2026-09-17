@@ -144,27 +144,21 @@
     return isNaN(d2)? null : d2;
   }
 
+  // 把時間點平移 +9 小時後，用 getUTC* 讀出的欄位就是 JST 的年月日時分
+  // （以前直接讀 UTC 欄位，JST 00:00–09:00 抓到的資料會被算成前一天）
+  function toJSTFields(date){ return new Date(date.getTime() + JST_OFFSET_MIN*60000); }
+
   function fmtJST(date){
-    const y=date.getUTCFullYear();
-    const m=to2(date.getUTCMonth()+1);
-    const d=to2(date.getUTCDate());
-    const hh=to2(date.getUTCHours()+9);
-    const H=(+hh)%24;
-    return `${y}-${m}-${d} ${to2(H)}:${to2(date.getUTCMinutes())}`;
+    const j = toJSTFields(date);
+    return `${j.getUTCFullYear()}-${to2(j.getUTCMonth()+1)}-${to2(j.getUTCDate())} ${to2(j.getUTCHours())}:${to2(j.getUTCMinutes())}`;
   }
 
   function jstDateKey(date){
-    const y=date.getUTCFullYear();
-    const m=to2(date.getUTCMonth()+1);
-    const d=to2(date.getUTCDate());
-    return `${y}-${m}-${d}`;
+    const j = toJSTFields(date);
+    return `${j.getUTCFullYear()}-${to2(j.getUTCMonth()+1)}-${to2(j.getUTCDate())}`;
   }
 
-  function todayJST(){
-    const now = new Date();
-    const jst = new Date(now.getTime() + (JST_OFFSET_MIN + now.getTimezoneOffset())*60000);
-    return jstDateKey(new Date(Date.UTC(jst.getFullYear(), jst.getMonth(), jst.getDate())));
-  }
+  function todayJST(){ return jstDateKey(new Date()); }
 
   // 熱門分數 = 0.6 × 新鮮度 + 0.4 × 板面名次
   // 新鮮度：fetched_at 距今的指數衰減（12 小時）
@@ -190,7 +184,7 @@
     const nowKey = todayJST();
     const now = Date.now();
     if(state.mode==='daily'){
-      rows = rows.filter(r=> jstDateKey(parseJST(r.fetched_at))===nowKey );
+      rows = rows.filter(r=>{ const d=parseJST(r.fetched_at); return d && jstDateKey(d)===nowKey; });
       $windowLabel.textContent = 'JST 今日';
       rows = scoreRows(rows).sort((a,b)=>b._score - a._score);
     } else if (state.mode==='live') {
