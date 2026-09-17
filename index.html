@@ -166,15 +166,20 @@
     return jstDateKey(new Date(Date.UTC(jst.getFullYear(), jst.getMonth(), jst.getDate())));
   }
 
+  // 熱門分數 = 0.6 × 新鮮度 + 0.4 × 板面名次
+  // 新鮮度：fetched_at 距今的指數衰減（12 小時）
+  // 板面名次：rank 欄（Make 寫入該串在該次抓取中的順序，1 = 板首頁最前面），
+  //          rank 1 → 1.0，之後線性遞減，超過 RANK_SPAN 名或沒有 rank 的舊資料 → 0
+  const RANK_SPAN = 20;
   function scoreRows(rows){
-    const n = rows.length, now = Date.now(), tau = 720*60*1000; // 12h
-    return rows.map((row,idx)=>{
-      const rpos = 1 - (idx)/(n-1 || 1);
+    const now = Date.now(), tau = 720*60*1000; // 12h
+    return rows.map((row)=>{
       const d = parseJST(row.fetched_at);
       const ageMs = d ? (now - d.getTime()) : 1e15;
       const t = Math.exp(-ageMs/tau);
-      const lift = Math.max(0, t - rpos);
-      return { ...row, _score: 0.6*t + 0.4*lift };
+      const rank = parseInt(row.rank, 10);
+      const rankScore = (rank >= 1) ? Math.max(0, 1 - (rank-1)/RANK_SPAN) : 0;
+      return { ...row, _score: 0.6*t + 0.4*rankScore };
     });
   }
 
