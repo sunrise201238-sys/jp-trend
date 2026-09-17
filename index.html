@@ -29,6 +29,13 @@
     footer{border-top:1px solid var(--border)}
     .row-between{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
     .small{font-size:12px}
+    .pager{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:6px;margin:20px 0 4px}
+    .pager[hidden]{display:none}
+    .pager button{min-width:38px;padding:8px 10px;cursor:pointer}
+    .pager button.active{background:#18202a;border-color:var(--accent);color:var(--accent);cursor:default}
+    .pager button:disabled{opacity:.4;cursor:not-allowed}
+    .pager .ellipsis{padding:0 2px;color:var(--muted)}
+    .pager .pageinfo{margin-left:8px}
   </style>
 </head>
 <body>
@@ -59,13 +66,14 @@
     <div class="wrap">
       <div class="row-between muted small" style="margin:6px 0 12px">
         <div>
-          <span id="count">0</span> 筆結果 ・ <span id="windowLabel">JST 今日</span>
+          <span id="count">0</span> 筆結果 ・ <span id="windowLabel">JST 今日</span><span id="pageInfo"></span>
         </div>
         <div>
           資料來源：<a href="https://asahi.5ch.net/newsplus/" target="_blank" rel="noopener">5ch / newsplus</a>
         </div>
       </div>
       <section class="grid" id="grid"></section>
+      <nav class="pager" id="pager" aria-label="分頁" hidden></nav>
     </div>
   </main>
 
@@ -81,18 +89,21 @@
   <script>
   const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSlBNUMjHcIbPs3cO3k3LJz4gpkmAqjxoCp7LSCWUKi7xIfPvd12uhmAW7pXPwTdia-vbVFCzPVt7AI/pub?output=csv";
   const JST_OFFSET_MIN = 9*60; // minutes
+  const PAGE_SIZE = 20; // 「所有時間」每頁筆數
 
   const $ = (s)=>document.querySelector(s);
   const grid = $('#grid');
   const $count = $('#count');
   const $last = $('#lastUpdated');
   const $windowLabel = $('#windowLabel');
+  const $pageInfo = $('#pageInfo');
+  const $pager = $('#pager');
   const $emotion = $('#emotion');
   const $search = $('#search');
   const $download = $('#downloadCsv');
   const tabs = [...document.querySelectorAll('.tab')];
 
-  const state = { rows: [], mode: 'daily', emotion: '', query: '' };
+  const state = { rows: [], mode: 'daily', emotion: '', query: '', page: 1 };
 
   function csvParse(text){
     const rows = [];
@@ -200,7 +211,23 @@
 
     $count.textContent = rows.length;
 
-    grid.innerHTML = rows.map(r=>{
+    // 「所有時間」分頁；其他模式維持一次顯示全部
+    let pageRows = rows;
+    if(state.mode==='all'){
+      const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+      state.page = Math.min(Math.max(1, state.page), totalPages);
+      const start = (state.page-1)*PAGE_SIZE;
+      pageRows = rows.slice(start, start+PAGE_SIZE);
+      $pageInfo.textContent = rows.length ? ` ・ 第 ${state.page} / ${totalPages} 頁（顯示第 ${start+1}–${start+pageRows.length} 筆）` : '';
+      renderPager(totalPages);
+    } else {
+      state.page = 1;
+      $pageInfo.textContent = '';
+      $pager.hidden = true;
+      $pager.innerHTML = '';
+    }
+
+    grid.innerHTML = pageRows.map(r=>{
       const kw = (r.keywords||'').split(/\s*,\s*/).filter(Boolean).slice(0,6);
       const d = parseJST(r.fetched_at);
       const fetched = d ? fmtJST(d)+' JST' : (r.fetched_at||'');
@@ -219,6 +246,43 @@
         </article>`;
     }).join('');
   }
+
+  // 頁碼：最多顯示 7 個號碼，超過時以「…」壓縮，永遠保留第一頁、最後一頁與目前頁前後各一頁
+  function pageList(total, current){
+    if(total<=7) return Array.from({length:total},(_,i)=>i+1);
+    const pages = new Set([1, total, current-1, current, current+1]);
+    if(current<=3){ [2,3,4].forEach(p=>pages.add(p)); }
+    if(current>=total-2){ [total-1,total-2,total-3].forEach(p=>pages.add(p)); }
+    const list = [...pages].filter(p=>p>=1&&p<=total).sort((a,b)=>a-b);
+    const out = [];
+    list.forEach((p,i)=>{ if(i>0 && p-list[i-1]>1) out.push('…'); out.push(p); });
+    return out;
+  }
+
+  function renderPager(totalPages){
+    if(totalPages<=1){ $pager.hidden = true; $pager.innerHTML=''; return; }
+    const cur = state.page;
+    const nums = pageList(totalPages, cur).map(p=> p==='…'
+      ? `<span class="ellipsis" aria-hidden="true">…</span>`
+      : `<button type="button" data-page="${p}" class="${p===cur?'active':''}" ${p===cur?'aria-current="page"':''}>${p}</button>`
+    ).join('');
+    $pager.innerHTML = `
+      <button type="button" data-page="${cur-1}" ${cur<=1?'disabled':''} aria-label="上一頁">‹ 上一頁</button>
+      ${nums}
+      <button type="button" data-page="${cur+1}" ${cur>=totalPages?'disabled':''} aria-label="下一頁">下一頁 ›</button>
+      <span class="pageinfo muted small">第 ${cur} / ${totalPages} 頁</span>`;
+    $pager.hidden = false;
+  }
+
+  $pager.addEventListener('click', (e)=>{
+    const btn = e.target.closest('button[data-page]');
+    if(!btn || btn.disabled) return;
+    const p = +btn.dataset.page;
+    if(!p || p===state.page) return;
+    state.page = p;
+    render();
+    window.scrollTo({top:0, behavior:'smooth'});
+  });
 
   function escapeHtml(s){
     return s.replace(/[&<>\"']/g, c=>({"&":"&amp;","<":"&lt;","&gt;":">","\"":"&quot;","'":"&#39;"}[c] || c));
@@ -272,10 +336,10 @@
   tabs.forEach(b=>b.addEventListener('click',()=>{
     tabs.forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
-    state.mode = b.dataset.mode; render();
+    state.mode = b.dataset.mode; state.page = 1; render();
   }));
-  document.getElementById('emotion').addEventListener('change',()=>{ state.emotion=emotion.value; render(); });
-  document.getElementById('search').addEventListener('input',()=>{ state.query=search.value; render(); });
+  document.getElementById('emotion').addEventListener('change',()=>{ state.emotion=emotion.value; state.page = 1; render(); });
+  document.getElementById('search').addEventListener('input',()=>{ state.query=search.value; state.page = 1; render(); });
 
   // init
   document.getElementById('year').textContent = new Date().getFullYear();
